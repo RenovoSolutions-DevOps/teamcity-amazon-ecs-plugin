@@ -4,7 +4,7 @@ package jetbrains.buildServer.clouds.ecs.web
 
 import jetbrains.buildServer.clouds.ecs.apiConnector.EcsApiConnectorImpl
 import jetbrains.buildServer.clouds.ecs.apiConnector.EcsTaskDefinition
-import jetbrains.buildServer.clouds.ecs.toAwsCredentialsProvider
+import jetbrains.buildServer.clouds.ecs.EcsCredentialsProviderFactory
 import jetbrains.buildServer.controllers.BaseController
 import jetbrains.buildServer.controllers.BasePropertiesBean
 import jetbrains.buildServer.internal.PluginPropertiesUtil
@@ -18,6 +18,7 @@ import javax.servlet.http.HttpServletResponse
 private const val ECS_TASK_DEFS_HTML = "ecsTaskDefs.html"
 
 class EcsTaskDefinitionChooserController(private val pluginDescriptor: PluginDescriptor,
+                                  private val credentialsProviders: EcsCredentialsProviderFactory,
                                   web: WebControllerManager) : BaseController() {
     val url = pluginDescriptor.getPluginResourcesPath(ECS_TASK_DEFS_HTML)
 
@@ -33,7 +34,7 @@ class EcsTaskDefinitionChooserController(private val pluginDescriptor: PluginDes
 
         val modelAndView = ModelAndView(pluginDescriptor.getPluginResourcesPath("taskDefs.jsp"))
         try {
-            val api = EcsApiConnectorImpl(props.toAwsCredentialsProvider(), AWSCommonParams.getRegionName(props))
+            val api = EcsApiConnectorImpl(credentialsProviders.create(props, request.getParameter("projectId")), AWSCommonParams.getRegionName(props))
             val sortedTasDefs = api.listTaskDefinitions()
                     .mapNotNull { taskDefArn -> api.describeTaskDefinition(taskDefArn) }
                     .filter { taskDef -> taskDef.isCompatibleWithLaunchType(launchType) }

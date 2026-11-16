@@ -7,12 +7,17 @@ import com.intellij.openapi.diagnostic.Logger
 import jetbrains.buildServer.BuildProject
 import jetbrains.buildServer.clouds.ecs.EcsParameterConstants
 import jetbrains.buildServer.clouds.ecs.apiConnector.EcsApiConnectorImpl
-import jetbrains.buildServer.clouds.ecs.toAwsCredentialsProvider
+import jetbrains.buildServer.clouds.ecs.AWS_CONNECTION_TYPE
+import jetbrains.buildServer.clouds.ecs.EcsCredentialsProviderFactory
+import jetbrains.buildServer.clouds.ecs.findProject
 import jetbrains.buildServer.controllers.ActionErrors
 import jetbrains.buildServer.controllers.BaseFormXmlController
 import jetbrains.buildServer.controllers.BasePropertiesBean
 import jetbrains.buildServer.internal.PluginPropertiesUtil
+import jetbrains.buildServer.serverSide.ProjectManager
 import jetbrains.buildServer.serverSide.agentPools.AgentPool
+import jetbrains.buildServer.serverSide.connections.ConnectionDescriptor
+import jetbrains.buildServer.serverSide.connections.ProjectConnectionsManager
 import jetbrains.buildServer.serverSide.agentPools.AgentPoolManager
 import jetbrains.buildServer.serverSide.agentPools.AgentPoolUtil
 import jetbrains.buildServer.util.amazon.AWSCommonParams
@@ -28,6 +33,9 @@ const val EDIT_ECS_HTML = "editEcs.html"
 class EcsProfileEditController(val pluginDescriptor: PluginDescriptor,
                                val agentPoolManager: AgentPoolManager,
                                web: WebControllerManager,
+                               private val credentialsProviders: EcsCredentialsProviderFactory,
+                               private val projectManager: ProjectManager,
+                               private val connectionsManager: ProjectConnectionsManager,
                                private val taskDefsController: EcsTaskDefinitionChooserController,
                                private val clustersController: EcsClusterChooserController,
                                private val deleteImageDialogController: EcsDeleteImageDialogController) : BaseFormXmlController() {
@@ -44,7 +52,7 @@ class EcsProfileEditController(val pluginDescriptor: PluginDescriptor,
             PluginPropertiesUtil.bindPropertiesFromRequest(request, propsBean, true)
             val props = propsBean.properties
             try {
-                val api = EcsApiConnectorImpl(props.toAwsCredentialsProvider(), AWSCommonParams.getRegionName(props))
+                val api = EcsApiConnectorImpl(credentialsProviders.create(props, request.getParameter("projectId")), AWSCommonParams.getRegionName(props))
                 val testConnectionResult = api.testConnection()
                 if (!testConnectionResult.success) {
                     val errors = ActionErrors()
@@ -68,6 +76,11 @@ class EcsProfileEditController(val pluginDescriptor: PluginDescriptor,
             pools.add(AgentPoolUtil.DUMMY_PROJECT_POOL)
         }
         pools.addAll(agentPoolManager.getProjectOwnedAgentPools(projectId))
+        mv.model["projectId"] = projectId ?: ""
+        val project = projectId?.let { projectManager.findProject(it) }
+        val awsConnections: List<ConnectionDescriptor> =
+                if (project == null) emptyList() else connectionsManager.getAvailableConnectionsOfType(project, AWS_CONNECTION_TYPE)
+        mv.model["awsConnections"] = awsConnections.sortedBy { (it.displayName ?: it.id).toLowerCase() }
         mv.model.put("launchTypes", LaunchType.values().toMutableList())
         mv.model["fargateVersions"] = EcsParameterConstants.FARGATE_VERSIONS.toMutableList()
         mv.model.put("agentPools", pools)

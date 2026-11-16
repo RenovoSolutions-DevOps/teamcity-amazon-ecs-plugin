@@ -6,6 +6,13 @@ if (!BS.Ecs) BS.Ecs = {};
 if(!BS.Ecs.ProfileSettingsForm) BS.Ecs.ProfileSettingsForm = OO.extend(BS.PluginPropertiesForm, {
 
     testConnectionUrl: '',
+    projectId: '',
+
+    // Profile form parameters plus the owning project, which the server needs to resolve an AWS connection.
+    serializeProfileParameters: function() {
+        return BS.Clouds.Admin.CreateProfileForm.serializeParameters() +
+            "&projectId=" + encodeURIComponent(BS.Ecs.ProfileSettingsForm.projectId);
+    },
 
     _dataKeys: [ 'launchType', 'taskDefinition', 'agentNamePrefix', 'cluster', 'taskGroup', 'subnets', 'fargatePlatformVersion', 'securityGroups', 'assignPublicIp', 'maxInstances', 'cpuReservationLimit', 'agent_pool_id'],
 
@@ -484,7 +491,7 @@ if(!BS.Ecs.ProfileSettingsForm) BS.Ecs.ProfileSettingsForm = OO.extend(BS.Plugin
 
     testConnection: function() {
         BS.ajaxRequest(this.testConnectionUrl, {
-            parameters: BS.Clouds.Admin.CreateProfileForm.serializeParameters(),
+            parameters: this.serializeProfileParameters(),
             onFailure: function (response) {
                 BS.TestConnectionDialog.show(false, response, null);
             }.bind(this),
@@ -550,7 +557,7 @@ if(!BS.Ecs.TaskDefChooser){
     });
 
     BS.Ecs.TaskDefChooser.showPopup = function(nearestElement, dataLoadUrl){
-        var serializeParameters = BS.Clouds.Admin.CreateProfileForm.serializeParameters();
+        var serializeParameters = BS.Ecs.ProfileSettingsForm.serializeProfileParameters();
         serializeParameters += "&launchType=" + BS.Ecs.ProfileSettingsForm.$launchType.val();
         this.showPopupNearElement(nearestElement, {
             parameters: serializeParameters,
@@ -575,7 +582,7 @@ if(!BS.Ecs.ClusterChooser) {
 
     BS.Ecs.ClusterChooser.showPopup = function(nearestElement, dataLoadUrl) {
         this.showPopupNearElement(nearestElement, {
-            parameters: BS.Clouds.Admin.CreateProfileForm.serializeParameters(),
+            parameters: BS.Ecs.ProfileSettingsForm.serializeProfileParameters(),
             url: dataLoadUrl,
             shift:{x:15,y:15}
         });
