@@ -27,7 +27,8 @@ class EcsCloudClientFactory(cloudRegister: CloudRegistrar,
                             private val pluginDescriptor: PluginDescriptor,
                             serverPaths: ServerPaths,
                             private val serverSettings: ServerSettings,
-                            private val instanceUpdater: EcsInstancesUpdater) : CloudClientFactory {
+                            private val instanceUpdater: EcsInstancesUpdater,
+                            private val credentialsProviders: EcsCredentialsProviderFactory) : CloudClientFactory {
     private val editUrl = pluginDescriptor.getPluginResourcesPath(EDIT_ECS_HTML)
     private val idxStorage = File(serverPaths.pluginDataDirectory, "ecsCloudIdx")
 
@@ -66,7 +67,7 @@ class EcsCloudClientFactory(cloudRegister: CloudRegistrar,
 
     override fun createNewClient(state: CloudState, params: CloudClientParameters): CloudClientEx {
         val ecsParams = params.toEcsParams()
-        val apiConnector = EcsApiConnectorImpl(ecsParams.awsCredentialsProvider, ecsParams.region)
+        val apiConnector = EcsApiConnectorImpl(credentialsProviders.create(params.parameters, state.projectId), ecsParams.region)
         val serverUUID = serverSettings.serverUUID!!
         val images = ecsParams.imagesData.map{
             val image = it.toImage(apiConnector, serverUUID, idxStorage, state.profileId)
@@ -85,8 +86,13 @@ class EcsCloudClientFactory(cloudRegister: CloudRegistrar,
     override fun getPropertiesProcessor(): PropertiesProcessor {
         return PropertiesProcessor { properties ->
             val invalids = ArrayList<InvalidProperty>()
-            for (e in AWSCommonParams.validate(properties!!, false)) {
-                invalids.add(InvalidProperty(e.key, e.value))
+            if (properties!![AWS_CONNECTION_ID_PARAM].isNullOrBlank()) {
+                for (e in AWSCommonParams.validate(properties, false)) {
+                    invalids.add(InvalidProperty(e.key, e.value))
+                }
+            } else if (AWSCommonParams.getRegionName(properties).isNullOrBlank()) {
+                // credentials come from the AWS connection, so only the region is left to validate
+                invalids.add(InvalidProperty(AWSCommonParams.REGION_NAME_PARAM, "Region name must not be empty"))
             }
             invalids
         }

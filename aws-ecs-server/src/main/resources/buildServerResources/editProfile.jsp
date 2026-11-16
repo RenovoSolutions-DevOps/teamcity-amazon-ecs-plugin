@@ -16,6 +16,8 @@
 <jsp:useBean id="fargateVersions" scope="request" type="java.util.Collection<java.lang.String>"/>
 <jsp:useBean id="agentPools" scope="request" type="java.util.Collection<jetbrains.buildServer.serverSide.agentPools.AgentPool>"/>
 
+<jsp:useBean id="awsConnections" scope="request" type="java.util.Collection<jetbrains.buildServer.serverSide.connections.ConnectionDescriptor>"/>
+<jsp:useBean id="projectId" class="java.lang.String" scope="request"/>
 <jsp:useBean id="testConnectionUrl" class="java.lang.String" scope="request"/>
 <jsp:useBean id="taskDefChooserUrl" scope="request" type="java.lang.String" />
 <jsp:useBean id="clusterChooserUrl" scope="request" type="java.lang.String" />
@@ -28,6 +30,20 @@
 </table>
 
 <table class="runnerFormTable">
+
+    <tr>
+        <th><label for="awsConnectionId">AWS connection:</label></th>
+        <td>
+            <props:selectProperty name="awsConnectionId" className="longField">
+                <props:option value=""><c:out value="<None: use the credentials set below>"/></props:option>
+                <c:forEach var="awsConn" items="${awsConnections}">
+                    <props:option value="${awsConn.id}"><c:out value="${awsConn.displayName}"/> (<c:out value="${awsConn.id}"/>)</props:option>
+                </c:forEach>
+            </props:selectProperty>
+            <span class="smallNote">Use the credentials of a TeamCity AWS connection available to this project. When a connection is selected, the credential settings below are ignored; the region is still required. A connection defined in a parent project must be shared with sub-projects.</span>
+            <span id="error_awsConnectionId" class="error"></span>
+        </td>
+    </tr>
 
 <jsp:include page="editAWSCommonParams.jsp">
     <jsp:param name="requireRegion" value="${true}"/>
@@ -232,6 +248,7 @@
         dataType: "script",
         cache: true,
         success: function () {
+            BS.Ecs.ProfileSettingsForm.projectId = '<c:out value="${projectId}"/>';
             BS.Ecs.ProfileSettingsForm.testConnectionUrl = '<c:url value="${testConnectionUrl}"/>';
             BS.Ecs.DeleteImageDialog.url = '<c:url value="${deleteImageUrl}"/>';
             BS.Ecs.ProfileSettingsForm.initialize();
