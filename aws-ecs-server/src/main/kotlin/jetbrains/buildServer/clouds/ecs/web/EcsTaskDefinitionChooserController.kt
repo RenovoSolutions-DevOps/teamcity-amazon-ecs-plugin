@@ -34,7 +34,7 @@ class EcsTaskDefinitionChooserController(private val pluginDescriptor: PluginDes
 
         val modelAndView = ModelAndView(pluginDescriptor.getPluginResourcesPath("taskDefs.jsp"))
         try {
-            val api = EcsApiConnectorImpl(credentialsProviders.create(props, request.getParameter("projectId")), AWSCommonParams.getRegionName(props))
+            val api = EcsApiConnectorImpl(credentialsProviders.createForUser(props, request.getParameter("projectId")), AWSCommonParams.getRegionName(props))
             val sortedTasDefs = api.listTaskDefinitions()
                     .mapNotNull { taskDefArn -> api.describeTaskDefinition(taskDefArn) }
                     .filter { taskDef -> taskDef.isCompatibleWithLaunchType(launchType) }

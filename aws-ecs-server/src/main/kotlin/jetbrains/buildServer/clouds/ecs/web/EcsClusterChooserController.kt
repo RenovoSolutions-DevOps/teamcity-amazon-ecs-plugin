@@ -33,7 +33,7 @@ class EcsClusterChooserController(private val pluginDescriptor: PluginDescriptor
 
         val modelAndView = ModelAndView(pluginDescriptor.getPluginResourcesPath("clusters.jsp"))
         try {
-            val api = EcsApiConnectorImpl(credentialsProviders.create(props, request.getParameter("projectId")), AWSCommonParams.getRegionName(props))
+            val api = EcsApiConnectorImpl(credentialsProviders.createForUser(props, request.getParameter("projectId")), AWSCommonParams.getRegionName(props))
             modelAndView.model["clusters"] = api.listClusters()
                     .mapNotNull { clusterArn -> api.describeCluster(clusterArn) }
                     .sortedBy { cluster -> cluster.name }

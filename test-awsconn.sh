@@ -22,5 +22,5 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$HERE":/src:ro -v "$WORK":/work e
 '
 # run on the same Java as the production server (the server API classes are Java 21)
 docker run --rm --user "$(id -u):$(id -g)" -v "$WORK":/work --entrypoint bash jetbrains/teamcity-server:2026.2.2 -ec '
-  java -cp "/work/build/testclasses:$(cat /work/build/test-runtime.cp)" org.testng.TestNG -testclass jetbrains.buildServer.clouds.ecs.AwsConnectionCredentialsProviderTest 2>&1 | grep -v "^\s*at \|^WARNING" | tail -40
+  java -cp "/work/build/testclasses:$(cat /work/build/test-runtime.cp)" org.testng.TestNG -testclass jetbrains.buildServer.clouds.ecs.AwsConnectionCredentialsProviderTest 2>&1 | grep -v "^\s*at \|^WARNING" | tail -60
 '

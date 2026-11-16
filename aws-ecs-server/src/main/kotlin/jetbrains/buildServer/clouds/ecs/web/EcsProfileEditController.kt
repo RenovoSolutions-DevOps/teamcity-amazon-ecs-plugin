@@ -52,7 +52,7 @@ class EcsProfileEditController(val pluginDescriptor: PluginDescriptor,
             PluginPropertiesUtil.bindPropertiesFromRequest(request, propsBean, true)
             val props = propsBean.properties
             try {
-                val api = EcsApiConnectorImpl(credentialsProviders.create(props, request.getParameter("projectId")), AWSCommonParams.getRegionName(props))
+                val api = EcsApiConnectorImpl(credentialsProviders.createForUser(props, request.getParameter("projectId")), AWSCommonParams.getRegionName(props))
                 val testConnectionResult = api.testConnection()
                 if (!testConnectionResult.success) {
                     val errors = ActionErrors()
@@ -77,7 +77,8 @@ class EcsProfileEditController(val pluginDescriptor: PluginDescriptor,
         }
         pools.addAll(agentPoolManager.getProjectOwnedAgentPools(projectId))
         mv.model["projectId"] = projectId ?: ""
-        val project = projectId?.let { projectManager.findProject(it) }
+        // only users who may edit the project get to see which AWS connections it can use
+        val project = projectId?.takeIf { credentialsProviders.canEditProject(it) }?.let { projectManager.findProject(it) }
         val awsConnections: List<ConnectionDescriptor> =
                 if (project == null) emptyList() else connectionsManager.getAvailableConnectionsOfType(project, AWS_CONNECTION_TYPE)
         mv.model["awsConnections"] = awsConnections.sortedBy { (it.displayName ?: it.id).toLowerCase() }

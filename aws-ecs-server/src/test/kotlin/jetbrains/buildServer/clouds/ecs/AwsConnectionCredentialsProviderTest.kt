@@ -4,20 +4,19 @@ import com.amazonaws.SdkClientException
 import com.amazonaws.auth.AWSSessionCredentials
 import jetbrains.buildServer.serverSide.ProjectManager
 import jetbrains.buildServer.serverSide.SProject
+import jetbrains.buildServer.serverSide.SecurityContextEx
+import jetbrains.buildServer.serverSide.auth.AccessChecker
+import jetbrains.buildServer.serverSide.auth.AccessDeniedException
 import jetbrains.buildServer.serverSide.connections.credentials.ConnectionCredentials
 import jetbrains.buildServer.serverSide.connections.credentials.ConnectionCredentialsException
 import jetbrains.buildServer.serverSide.connections.credentials.ProjectConnectionCredentialsManager
 import org.testng.Assert.assertEquals
 import org.testng.Assert.assertFalse
-import org.testng.Assert.assertNotNull
 import org.testng.Assert.assertSame
 import org.testng.Assert.assertTrue
 import org.testng.Assert.fail
 import org.testng.annotations.Test
 import java.lang.reflect.Proxy
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 @Test
@@ -56,6 +55,17 @@ class AwsConnectionCredentialsProviderTest {
     private fun <T> proxy(type: Class<T>): T =
             type.cast(Proxy.newProxyInstance(javaClass.classLoader, arrayOf(type)) { _, method, _ -> throw UnsupportedOperationException(method.name) })
 
+    private fun factory(manager: ProjectConnectionCredentialsManager, canEdit: Boolean = true): EcsCredentialsProviderFactory {
+        val checker = Proxy.newProxyInstance(javaClass.classLoader, arrayOf(AccessChecker::class.java)) { _, method, args ->
+            if (method.name == "checkCanEditProject" && !canEdit) throw AccessDeniedException(null, "no edit rights")
+            null
+        } as AccessChecker
+        val security = Proxy.newProxyInstance(javaClass.classLoader, arrayOf(SecurityContextEx::class.java)) { _, method, _ ->
+            if (method.name == "getAccessChecker") checker else throw UnsupportedOperationException(method.name)
+        } as SecurityContextEx
+        return EcsCredentialsProviderFactory(manager, projects(mapOf("Proj" to project)), security)
+    }
+
     private val sessionCredentials = mapOf(
             "awsAccessKeyId" to "AKIATEST",
             "awsSecretAccessKey" to "secret",
@@ -88,45 +98,16 @@ class AwsConnectionCredentialsProviderTest {
     }
 
     @Test
-    fun reusesCredentialsUntilTheyAreDueForRefresh() {
-        val manager = FakeManager { sessionCredentials }
-        var now = 0L
-        val provider = AwsConnectionCredentialsProvider(manager, projects(mapOf("Proj" to project)), "Proj", "AwsServices") { now }
-
-        val first = provider.credentials
-        now += TimeUnit.MINUTES.toNanos(4)
-        assertSame(provider.credentials, first)
-        assertEquals(manager.requests.get(), 1)
-
-        now += TimeUnit.MINUTES.toNanos(2)
-        provider.credentials
-        assertEquals(manager.requests.get(), 2)
-    }
-
-    @Test
-    fun refreshForcesNewRequest() {
-        val manager = FakeManager { sessionCredentials }
+    fun asksTheConnectionOnEveryCallSoServerSideRefreshIsNeverMissed() {
+        var current = sessionCredentials
+        val manager = FakeManager { current }
         val provider = AwsConnectionCredentialsProvider(manager, projects(mapOf("Proj" to project)), "Proj", "AwsServices")
 
-        provider.credentials
-        provider.refresh()
-        provider.credentials
+        assertEquals(provider.credentials.awsAccessKeyId, "AKIATEST")
+        current = sessionCredentials + ("awsAccessKeyId" to "AKIAREFRESHED")
 
+        assertEquals(provider.credentials.awsAccessKeyId, "AKIAREFRESHED")
         assertEquals(manager.requests.get(), 2)
-    }
-
-    @Test
-    fun concurrentCallersShareOneRequest() {
-        val manager = FakeManager { Thread.sleep(100); sessionCredentials }
-        val provider = AwsConnectionCredentialsProvider(manager, projects(mapOf("Proj" to project)), "Proj", "AwsServices")
-        val pool = Executors.newFixedThreadPool(8)
-        val start = CountDownLatch(1)
-        val futures = (1..8).map { pool.submit<Any> { start.await(); provider.credentials } }
-        start.countDown()
-        futures.forEach { assertNotNull(it.get(10, TimeUnit.SECONDS)) }
-        pool.shutdown()
-
-        assertEquals(manager.requests.get(), 1)
     }
 
     @Test
@@ -179,7 +160,7 @@ class AwsConnectionCredentialsProviderTest {
 
     @Test
     fun factoryUsesConnectionWhenProfileHasOne() {
-        val factory = EcsCredentialsProviderFactory(FakeManager { sessionCredentials }, projects(mapOf("Proj" to project)))
+        val factory = factory(FakeManager { sessionCredentials })
 
         val provider = factory.create(mapOf(AWS_CONNECTION_ID_PARAM to " AwsServices "), "Proj")
 
@@ -189,7 +170,7 @@ class AwsConnectionCredentialsProviderTest {
 
     @Test
     fun factoryRequiresProjectForConnection() {
-        val factory = EcsCredentialsProviderFactory(FakeManager { sessionCredentials }, projects(mapOf("Proj" to project)))
+        val factory = factory(FakeManager { sessionCredentials })
 
         try {
             factory.create(mapOf(AWS_CONNECTION_ID_PARAM to "AwsServices"), null)
@@ -197,5 +178,23 @@ class AwsConnectionCredentialsProviderTest {
         } catch (e: IllegalArgumentException) {
             assertTrue(e.message!!.contains("AwsServices"))
         }
+    }
+
+    @Test
+    fun userRequestWithConnectionNeedsEditRightsOnProject() {
+        val manager = FakeManager { sessionCredentials }
+        val denied = factory(manager, canEdit = false)
+
+        try {
+            denied.createForUser(mapOf(AWS_CONNECTION_ID_PARAM to "AwsServices"), "Proj")
+            fail("expected AccessDeniedException")
+        } catch (e: AccessDeniedException) {
+            // expected
+        }
+        assertEquals(manager.requests.get(), 0)
+        assertFalse(denied.canEditProject("Proj"))
+        assertTrue(factory(manager).canEditProject("Proj"))
+        assertFalse(factory(manager).canEditProject("NoSuchProject"))
+        assertEquals(factory(manager).createForUser(mapOf(AWS_CONNECTION_ID_PARAM to "AwsServices"), "Proj").credentials.awsAccessKeyId, "AKIATEST")
     }
 }
